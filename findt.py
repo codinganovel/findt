@@ -355,6 +355,10 @@ class FuzzyFinder:
         # Discover files
         self.all_files = discover_files(self.directory, self.mode.show_hidden)
         self.filtered_files = self.search()
+        
+        # Fix initial selection if no files found
+        if not self.filtered_files:
+            self.selected_index = -1
     
     def search(self) -> List[Tuple[Path, str]]:
         """Perform search based on current mode and query."""
@@ -463,25 +467,25 @@ class FuzzyFinder:
 ╠══════════════════════════════════════════════════════╣
 ║                                                      ║
 ║  Navigation:                                         ║
-║    j/k or ↑/↓     Move up/down                      ║
-║    g/G           Jump to top/bottom                  ║
+║    Ctrl+j/Ctrl+k or ↑/↓     Move up/down                  ║
+║    Ctrl+g/Ctrl+E           Jump to top/bottom             ║
 ║    Page Up/Down  Scroll by page                      ║
 ║                                                      ║
 ║  Search:                                             ║
 ║    Type          Real-time search                    ║
 ║    Backspace     Remove characters                   ║
 ║    Ctrl+U        Clear search                        ║
-║    f             Toggle fancy mode (if available)    ║
+║    Ctrl+f             Toggle fancy mode (if available)    ║
 ║                                                      ║
 ║  Actions:                                            ║
 ║    Enter         Select file & show preview          ║
-║    c             Copy file path to clipboard         ║
-║    y             Copy file content to clipboard      ║
-║    p             Toggle preview pane                 ║
+║    Ctrl+c             Copy file path to clipboard         ║
+║    Ctrl+y             Copy file content to clipboard      ║
+║    Ctrl+p             Toggle preview pane                 ║
 ║                                                      ║
 ║  System:                                             ║
-║    ?             Show this help                      ║
-║    q             Quit                                ║
+║    Ctrl+h             Show this help                      ║
+║    Ctrl+q             Quit                                ║
 ║    Esc           Clear search or quit                ║
 ║                                                      ║
 ╚══════════════════════════════════════════════════════╝
@@ -522,19 +526,23 @@ Press any key to continue...
     
     def handle_navigation(self, key: str) -> bool:
         """Handle navigation keys. Return True if handled."""
-        if key in ['j', '\x1b[B']:  # Down (j or down arrow)
+        # Don't navigate if no files available
+        if not self.filtered_files:
+            return True if key in ['\x0a', '\x0b', '\x07', '\x05', '\x1b[A]', '\x1b[B]', '\x1b[5~', '\x1b[6~'] else False
+    
+        if key in ['\x0a', '\x1b[B']:  # Down (Ctrl+J or down arrow)
             if self.selected_index < len(self.filtered_files) - 1:
                 self.selected_index += 1
             return True
-        elif key in ['k', '\x1b[A']:  # Up (k or up arrow)
+        elif key in ['\x0b', '\x1b[A']:  # Up (Ctrl+K or up arrow)
             if self.selected_index > 0:
                 self.selected_index -= 1
             return True
-        elif key == 'g':  # Top
+        elif key == '\x07':  # Top (Ctrl+G)
             self.selected_index = 0
             return True
-        elif key == 'G':  # Bottom
-            self.selected_index = max(0, len(self.filtered_files) - 1)
+        elif key == '\x05':  # Bottom (Ctrl+E for "End")
+            self.selected_index = len(self.filtered_files) - 1
             return True
         elif key == '\x1b[5~':  # Page Up
             self.selected_index = max(0, self.selected_index - 10)
@@ -544,20 +552,21 @@ Press any key to continue...
             return True
         return False
     
+    
     def handle_action(self, key: str) -> bool:
         """Handle action keys. Return True if should continue running."""
         if key == '\r' or key == '\n':  # Enter - select file
-            if self.filtered_files:
+            if self.filtered_files and 0 <= self.selected_index < len(self.filtered_files):
                 self.selected_file = self.filtered_files[self.selected_index][0]
-        elif key == 'c':  # Copy path
-            if self.filtered_files:
+        elif key == '\x03':  # Copy path (Ctrl+C)
+            if self.filtered_files and 0 <= self.selected_index < len(self.filtered_files):
                 file_path = self.filtered_files[self.selected_index][0]
                 success = self.clipboard.copy(str(file_path))
                 if success:
                     print(f"\n📋 Copied path: {file_path}")
                 time.sleep(1)
-        elif key == 'y':  # Copy content
-            if self.filtered_files:
+        elif key == '\x19':  # Copy content (Ctrl+Y)
+            if self.filtered_files and 0 <= self.selected_index < len(self.filtered_files):
                 file_path = self.filtered_files[self.selected_index][0]
                 content = get_file_content(file_path)
                 success = self.clipboard.copy(content)
@@ -566,53 +575,66 @@ Press any key to continue...
                 else:
                     print(f"\n⚠️ Could not copy content from: {file_path}")
                 time.sleep(1)
-        elif key == 'f':  # Toggle fancy mode
+        elif key == '\x06':  # Toggle fancy mode (Ctrl+F)
             if self.mode.toggle_fancy():
                 self.filtered_files = self.search()
-                self.selected_index = min(self.selected_index, len(self.filtered_files) - 1)
-        elif key == 'p':  # Toggle preview
+                # Fix index after search
+                if self.filtered_files:
+                    self.selected_index = min(self.selected_index, len(self.filtered_files) - 1)
+                else:
+                    self.selected_index = -1
+        elif key == '\x10':  # Toggle preview (Ctrl+P)
             self.mode.show_preview = not self.mode.show_preview
-        elif key == '?':  # Help
+        elif key == '\x08':  # Help (Ctrl+H)
             self.show_help()
-        elif key in ['q', '\x03']:  # Quit (q or Ctrl+C)
+        elif key == '\x11':  # Quit (Ctrl+Q)
             return False
         elif key == '\x1b':  # Escape
             if self.query:
                 self.query = ""
                 self.filtered_files = self.search()
-                self.selected_index = 0
+                self.selected_index = 0 if self.filtered_files else -1
             else:
                 return False
         elif key == '\x15':  # Ctrl+U - clear search
             self.query = ""
             self.filtered_files = self.search()
-            self.selected_index = 0
+            self.selected_index = 0 if self.filtered_files else -1
         elif key == '\x7f' or key == '\b':  # Backspace
             if self.query:
                 self.query = self.query[:-1]
                 self.filtered_files = self.search()
-                self.selected_index = min(self.selected_index, max(0, len(self.filtered_files) - 1))
+                # Fix index after search
+                if self.filtered_files:
+                    self.selected_index = min(self.selected_index, len(self.filtered_files) - 1)
+                else:
+                    self.selected_index = -1
         elif key.isprintable() and len(key) == 1:  # Regular character
             self.query += key
             self.filtered_files = self.search()
-            self.selected_index = 0
-        
-        return True
+            self.selected_index = 0 if self.filtered_files else -1
     
+        return True
+
     def run(self):
         """Main application loop."""
         while True:
             # Update scroll offset to keep selected item visible
-            terminal_height = 20
-            start, end = self.get_display_range(terminal_height)
-            
-            if self.selected_index < start:
-                self.scroll_offset = self.selected_index
-            elif self.selected_index >= end:
-                available_height = terminal_height - 6
-                if self.mode.show_preview and self.selected_file:
-                    available_height -= 6
-                self.scroll_offset = self.selected_index - available_height + 1
+            # Only do this if we have files and a valid selection
+            if self.filtered_files and 0 <= self.selected_index < len(self.filtered_files):
+                terminal_height = 20
+                start, end = self.get_display_range(terminal_height)
+                
+                if self.selected_index < start:
+                    self.scroll_offset = self.selected_index
+                elif self.selected_index >= end:
+                    available_height = terminal_height - 6
+                    if self.mode.show_preview and self.selected_file:
+                        available_height -= 6
+                    self.scroll_offset = self.selected_index - available_height + 1
+            else:
+                # Reset scroll when no valid selection
+                self.scroll_offset = 0
             
             self.draw_ui()
             
