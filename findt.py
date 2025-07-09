@@ -277,7 +277,7 @@ def exact_search(query: str, files: List[Path]) -> List[Tuple[Path, str]]:
     return results
 
 def fuzzy_search(query: str, files: List[Path]) -> List[Tuple[Path, str]]:
-    """Fuzzy matching with rapidfuzz."""
+    """Enhanced fuzzy matching with rapidfuzz, content search, and proper scoring."""
     if not HAS_RAPIDFUZZ:
         return exact_search(query, files)
     
@@ -285,13 +285,53 @@ def fuzzy_search(query: str, files: List[Path]) -> List[Tuple[Path, str]]:
         return [(f, "all") for f in files]
     
     results = []
-    for file_path in files:
-        # Fuzzy match filename
-        score = fuzz.partial_ratio(query.lower(), file_path.name.lower())
-        if score > 60:  # Threshold for relevance
-            results.append((file_path, "filename"))
+    query_lower = query.lower()
     
-    return results
+    for file_path in files:
+        best_score = 0
+        best_match_type = "filename"
+        
+        # Fuzzy match filename (highest priority)
+        filename_score = fuzz.partial_ratio(query_lower, file_path.name.lower())
+        if filename_score > best_score:
+            best_score = filename_score
+            best_match_type = "filename"
+        
+        # Fuzzy match full path (medium priority)
+        path_score = fuzz.partial_ratio(query_lower, str(file_path).lower())
+        if path_score > best_score:
+            best_score = path_score
+            best_match_type = "path"
+        
+        # Fuzzy match file content (lower priority, but still valuable)
+        if file_path.suffix.lower() in TEXT_EXTENSIONS:
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read(2048).lower()  # Read more content for better fuzzy matching
+                    content_score = fuzz.partial_ratio(query_lower, content)
+                    # Weight content matches slightly lower than filename matches
+                    weighted_content_score = content_score * 0.8
+                    if weighted_content_score > best_score:
+                        best_score = weighted_content_score
+                        best_match_type = "content"
+            except (IOError, UnicodeDecodeError, PermissionError):
+                pass
+        
+        # Include results with score above threshold
+        if best_score > 50:  # Lowered threshold for more inclusive fuzzy matching
+            results.append((file_path, best_match_type, best_score))
+    
+    # Sort by score (highest first), then by match type priority, then by filename
+    def sort_key(item):
+        path, match_type, score = item
+        # Priority: filename > path > content
+        type_priority = {"filename": 3, "path": 2, "content": 1}
+        return (-score, -type_priority.get(match_type, 0), path.name.lower())
+    
+    results.sort(key=sort_key)
+    
+    # Return in the expected format (without scores)
+    return [(path, match_type) for path, match_type, score in results]
 
 def get_file_preview(file_path: Path, lines: int = 4) -> str:
     """Get first few lines of file for preview."""
