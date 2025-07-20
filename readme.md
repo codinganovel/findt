@@ -142,8 +142,11 @@ If you're crazy enough to run findt in your root directory, normal mode will han
 Most people run this on project directories or ~/Documents anyway, where it's instant.
 
 ---
-## 📁 License
-MIT
+## 📄 License
+
+under ☕️, check out [the-coffee-license](https://github.com/codinganovel/The-Coffee-License)
+
+I've included both licenses with the repo, do what you know is right. The licensing works by assuming you're operating under good faith.
 ---
 ## ✍️ Created with 💙 by Sam  
 Because fzf is functional, but life's too short for ugly interfaces.
